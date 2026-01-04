@@ -1,0 +1,35 @@
+// עדכון לפונקציית הקישור בתוך ה-Script
+let midiCharacteristic = null;
+
+async function connectToZoom() {
+    try {
+        const device = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: 'L-20R' }], // מחפש מכשיר שמתחיל ב-L-20R
+            optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66'] // ה-Service של MIDI
+        });
+
+        const server = await device.gatt.connect();
+        const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
+        
+        // קבלת המאפיין לכתיבת נתונים
+        const characteristics = await service.getCharacteristics();
+        midiCharacteristic = characteristics.find(c => c.properties.write || c.properties.writeWithoutResponse);
+
+        alert("מחובר בהצלחה ל-Zoom L-20R!");
+    } catch (error) {
+        alert("שגיאה: " + error.message);
+    }
+}
+
+// פונקציה לשליחת פקודת MIDI (למשל הזזת פיידר)
+async function sendMidiCC(channel, control, value) {
+    if (!midiCharacteristic) return;
+
+    // חבילת MIDI טיפוסית בבלוטות' מורכבת מ-5 בייטים
+    const timestampLow = Date.now() & 0x7F;
+    const header = 0x80 | ((Date.now() >> 7) & 0x3F);
+    const status = 0xB0 | (channel - 1); // 0xB0 זה פקודת Control Change
+    
+    const data = new Uint8Array([header, timestampLow, status, control, value]);
+    await midiCharacteristic.writeValue(data);
+}
