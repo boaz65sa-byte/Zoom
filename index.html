@@ -1,25 +1,90 @@
 <!DOCTYPE html>
-<html>
+<html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <title>Scanner Test</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom L-20R - MIDI Active</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: #00d4ff; padding: 20px; }
+        .card { background: #222; border: 2px solid #00d4ff; padding: 20px; border-radius: 15px; }
+        button { background: #00d4ff; color: #000; border: none; padding: 20px; border-radius: 10px; font-weight: bold; width: 100%; cursor: pointer; font-size: 1.2rem; margin-top: 10px; }
+        .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 200px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin-top: 20px; border: 1px solid #333; }
+        .fader-box { display: none; margin-top: 20px; padding: 20px; background: #333; border-radius: 10px; }
+        input[type=range] { width: 100%; height: 60px; }
+    </style>
 </head>
-<body style="text-align:center; padding-top:50px; background:#f0f0f0;">
-    <button id="go" style="padding:30px; font-size:24px;">לחץ כאן לסריקה</button>
-    <div id="out" style="margin-top:20px; font-family:monospace;"></div>
+<body>
+
+    <div class="card">
+        <h1>Zoom L-20R Link</h1>
+        <button id="connectBtn">התחבר (בדיקת UUID)</button>
+        <p id="status">סטטוס: ממתין...</p>
+    </div>
+
+    <div id="controls" class="fader-box">
+        <h3>ניסוי שליטה - ערוץ 1</h3>
+        <input type="range" id="fader1" min="0" max="127" value="0">
+        <h1 id="val">0</h1>
+        <p>אם הנורה כחולה קבועה, הזז את הסליידר ובדוק את המיקסר</p>
+    </div>
+
+    <div class="log" id="log">לוג מערכת:</div>
 
     <script>
-        document.getElementById('go').onclick = async () => {
-            const out = document.getElementById('out');
-            out.innerHTML = "מחפש...";
+        const log = (msg) => {
+            const div = document.getElementById('log');
+            div.innerHTML += `> ${msg}<br>`;
+            div.scrollTop = div.scrollHeight;
+        };
+
+        let midiChar = null;
+        // זה ה-UUID הספציפי ש-Zoom משתמשת בו ל-MIDI
+        const ZOOM_MIDI_SERVICE = '03b80100-f136-11e1-9103-0800200c9a66';
+        const ZOOM_MIDI_CHAR = '7772e5db-3868-4112-a1a9-f2669d106bf3';
+
+        document.getElementById('connectBtn').onclick = async () => {
             try {
-                // הבקשה הכי בסיסית שיש
+                log("מנסה להתחבר עם UUID ספציפי...");
                 const device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true
+                    filters: [{ namePrefix: 'L-20R' }, { namePrefix: 'Zoom' }, { namePrefix: 'BTA' }],
+                    optionalServices: [ZOOM_MIDI_SERVICE]
                 });
-                out.innerHTML = "נבחר מכשיר: " + device.name;
+
+                const server = await device.gatt.connect();
+                log("מחובר! נורה אמורה להיות כחולה.");
+                
+                const service = await server.getPrimaryService(ZOOM_MIDI_SERVICE);
+                log("שירות MIDI אותר.");
+                
+                const chars = await service.getCharacteristics();
+                // נחפש מאפיין שמאפשר כתיבה
+                midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+                
+                if (midiChar) {
+                    log("מאפיין כתיבה נמצא! המערכת מוכנה.");
+                    document.getElementById('status').innerText = "מחובר ומוכן!";
+                    document.getElementById('controls').style.display = 'block';
+                } else {
+                    log("לא נמצא מאפיין כתיבה בתוך השירות.");
+                }
+
             } catch (err) {
-                out.innerHTML = "שגיאה: " + err.message;
+                log("שגיאה: " + err.message);
+            }
+        };
+
+        document.getElementById('fader1').oninput = async (e) => {
+            const v = parseInt(e.target.value);
+            document.getElementById('val').innerText = v;
+            if (midiChar) {
+                try {
+                    // הזרקת פקודת MIDI BLE
+                    // [Header, Timestamp, Status (0xB0 = CC), Controller (7 = Vol), Value]
+                    const data = new Uint8Array([0x80, 0x80, 0xB0, 0x07, v]);
+                    await midiChar.writeValueWithoutResponse(data);
+                } catch (err) {
+                    console.error(err);
+                }
             }
         };
     </script>
