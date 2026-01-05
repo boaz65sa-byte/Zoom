@@ -3,29 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסת המפתח 2.2</title>
+    <title>Zoom L-20R - לוח בקרה 2.3</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000; color: #fff; padding: 20px; }
-        #connectBtn { background: #ff0000; color: white; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; width: 100%; cursor: pointer; box-shadow: 0 0 20px rgba(255,0,0,0.5); }
-        .log { background: #111; color: #00ff00; text-align: left; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #333; font-size: 12px; }
-        .fader-area { display: none; margin-top: 20px; padding: 20px; border: 2px solid #ff0000; border-radius: 15px; }
-        input[type=range] { width: 100%; height: 60px; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #fff; padding: 10px; }
+        #connectBtn { background: #8e44ad; color: white; border: none; padding: 20px; border-radius: 10px; font-size: 1.2rem; width: 100%; cursor: pointer; margin-bottom: 20px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; display: none; }
+        .fader-card { background: #1a1a1a; padding: 15px; border-radius: 10px; border: 1px solid #333; }
+        input[type=range] { width: 100%; height: 40px; margin: 10px 0; }
+        .log { background: #000; color: #00ff00; text-align: left; padding: 10px; height: 120px; overflow-y: scroll; font-family: monospace; font-size: 11px; margin-top: 20px; border: 1px solid #444; }
+        h4 { margin: 0; color: #8e44ad; }
     </style>
 </head>
 <body>
 
-    <div style="color: #ff0000; font-weight: bold;">גרסת מפתח מאסטר 2.2</div>
-    <h1>חיבור בכוח ל-Zoom</h1>
-    
-    <button id="connectBtn">התחבר ופרוץ שירותים</button>
+    <div style="color: #8e44ad; font-weight: bold;">גרסה 2.3 - לוח איתור פיידרים</div>
+    <button id="connectBtn">התחבר למיקסר</button>
 
-    <div id="faderArea" class="fader-area">
-        <h3>שליטה פעילה - נסה להזיז!</h3>
-        <input type="range" id="fader" min="0" max="127" value="0">
-        <div id="val" style="font-size: 3rem; color: #ff0000;">0</div>
+    <div id="controls" class="grid">
+        <script>
+            for(let i=1; i<=16; i++) {
+                document.write(`
+                    <div class="fader-card">
+                        <h4>Fader CC# ${i}</h4>
+                        <input type="range" min="0" max="127" value="0" oninput="sendMidi(${i}, this.value)">
+                        <span id="val${i}">0</span>
+                    </div>
+                `);
+            }
+        </script>
     </div>
 
-    <div class="log" id="log">לוג אבחון:</div>
+    <div class="log" id="log">לוג:</div>
 
     <script>
         const log = (msg) => {
@@ -34,73 +42,39 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        let activeChar = null;
+        let midiChar = null;
 
         document.getElementById('connectBtn').onclick = async () => {
             try {
-                log("סורק... (וודא שהאייפד מנותק!)");
-                
-                // הוספת UUID-ים פוטנציאליים של Zoom
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: [
-                        '03b80100-f136-11e1-9103-0800200c9a66', // MIDI
-                        '00001800-0000-1000-8000-00805f9b34fb', // Generic
-                        '00001801-0000-1000-8000-00805f9b34fb'  // Attribute
-                    ]
+                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66']
                 });
-
-                log("מנסה להתחבר ל-GATT...");
                 const server = await device.gatt.connect();
-                log("חיבור פיזי הצליח.");
+                const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
+                const chars = await service.getCharacteristics();
+                midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
 
-                // במקום לחפש שירות מסוים, ננסה לבקש את כולם בצורה בטוחה
-                log("מבקש רשימת שירותים...");
-                const services = await server.getPrimaryServices();
-                
-                if (services.length === 0) {
-                    throw new Error("המכשיר לא החזיר שירותים. נסה לאפס את ה-BTA-1.");
-                }
-
-                log(`נמצאו ${services.length} שירותים.`);
-
-                for (const service of services) {
-                    log("סורק שירות: " + service.uuid.substring(0,8));
-                    try {
-                        const chars = await service.getCharacteristics();
-                        for (const char of chars) {
-                            if (char.properties.writeWithoutResponse || char.properties.write) {
-                                activeChar = char;
-                                log("!!! נמצא מאפיין כתיבה זמין !!!");
-                            }
-                        }
-                    } catch (e) {
-                        log("שירות חסום לקריאה.");
-                    }
-                }
-
-                if (activeChar) {
-                    document.getElementById('faderArea').style.display = 'block';
+                if (midiChar) {
+                    log("מחובר! נסה להזיז את הפיידרים.");
+                    document.getElementById('controls').style.display = 'grid';
                     document.getElementById('connectBtn').style.display = 'none';
-                    log("מערכת מוכנה לשליטה.");
                 }
-
             } catch (err) {
                 log("שגיאה: " + err.message);
             }
         };
 
-        document.getElementById('fader').oninput = async (e) => {
-            const v = e.target.value;
-            document.getElementById('val').innerText = v;
-            if (activeChar) {
+        async function sendMidi(cc, value) {
+            document.getElementById('val' + cc).innerText = value;
+            if (midiChar) {
                 try {
-                    // שליחת הודעה בפורמט MIDI over Bluetooth
-                    const data = new Uint8Array([0x80, 0x80, 0xB0, 0x07, v]);
-                    await activeChar.writeValueWithoutResponse(data);
+                    // שליחת פקודת Control Change
+                    const data = new Uint8Array([0x80, 0x80, 0xB0, cc, value]);
+                    await midiChar.writeValueWithoutResponse(data);
                 } catch (e) {}
             }
-        };
+        }
     </script>
 </body>
 </html>
