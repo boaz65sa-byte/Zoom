@@ -3,29 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - Discovery Mode</title>
+    <title>Zoom L-20R - Simple Connect</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #121212; color: #00ff00; padding: 20px; }
-        .card { background: #1e1e1e; border: 2px solid #444; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
-        button { background: #28a745; color: white; border: none; padding: 15px; border-radius: 8px; font-weight: bold; width: 100%; cursor: pointer; margin-top: 10px; }
-        .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 300px; overflow-y: scroll; font-family: monospace; font-size: 13px; margin-top: 20px; border: 1px solid #444; }
-        .service-item { background: #333; margin: 5px; padding: 10px; border-radius: 5px; font-size: 11px; color: #00d4ff; border-left: 3px solid #00d4ff; }
+        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
+        .btn { background: #28a745; color: white; border: none; padding: 20px; border-radius: 10px; font-size: 1.2rem; width: 100%; cursor: pointer; }
+        .log { background: #000; color: #00ff00; text-align: left; padding: 10px; height: 300px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #444; }
     </style>
 </head>
 <body>
 
-    <div class="card">
-        <h1>Zoom L-20R: שלב הגילוי</h1>
-        <p>1. וודא שנורה מהבהבת במיקסר<br>2. לחץ על הכפתור ובחר ב-L-20R</p>
-        <button id="scanBtn">התחבר וסרוק שירותים</button>
-    </div>
-
-    <div id="results" class="card" style="display:none;">
-        <h3>שירותים שנמצאו:</h3>
-        <div id="servicesList"></div>
-    </div>
-
-    <div class="log" id="log">לוג פעולות:</div>
+    <h1>חיבור Zoom L-20R</h1>
+    <button class="btn" id="connect">לחץ לחיבור (סריקה כללית)</button>
+    <div class="log" id="log">לוג מערכת:</div>
 
     <script>
         const log = (msg) => {
@@ -34,51 +23,27 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        document.getElementById('scanBtn').onclick = async () => {
+        document.getElementById('connect').onclick = async () => {
             try {
-                log("פותח חלון בחירה...");
+                log("סורק מכשירים...");
+                // אנחנו משתמשים בשיטה הכי בסיסית שעבדה לך קודם
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    // אנחנו מבקשים מהדפדפן רשות לגשת לכל שירות אפשרי
-                    optionalServices: [
-                        '03b80100-f136-11e1-9103-0800200c9a66', // MIDI Standard
-                        '00001800-0000-1000-8000-00805f9b34fb', // Generic Access
-                        '00001801-0000-1000-8000-00805f9b34fb'  // Generic Attribute
-                    ]
+                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66']
                 });
 
-                log("מתחבר ל-" + device.name + "...");
+                log("מתחבר ל: " + device.name);
                 const server = await device.gatt.connect();
-                log("מחובר פיזית! (נורה אמורה להיות כחולה קבועה)");
+                log("מחובר פיזית! נורה אמורה להיות כחולה.");
 
-                document.getElementById('results').style.display = 'block';
-                const servicesList = document.getElementById('servicesList');
-                servicesList.innerHTML = "";
+                // ניסיון לקבל את השירות
+                log("מנסה לשלוף שירות MIDI...");
+                const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
+                log("הצלחתי למצוא את השירות!");
 
-                log("מחפש שירותים...");
-                const services = await server.getPrimaryServices();
-                log("נמצאו " + services.length + " שירותים.");
-
-                for (const service of services) {
-                    const item = document.createElement('div');
-                    item.className = 'service-item';
-                    item.innerText = "Service UUID: " + service.uuid;
-                    servicesList.appendChild(item);
-                    log("סורק מאפיינים לשירות: " + service.uuid.substring(0,8));
-                    
-                    try {
-                        const chars = await service.getCharacteristics();
-                        for (const char of chars) {
-                            const cItem = document.createElement('div');
-                            cItem.style.paddingRight = "20px";
-                            cItem.style.color = "#fff";
-                            cItem.innerText = "└ Characteristic: " + char.uuid;
-                            servicesList.appendChild(cItem);
-                        }
-                    } catch (e) {
-                        log("לא ניתן לקרוא מאפיינים לשירות זה.");
-                    }
-                }
+                const chars = await service.getCharacteristics();
+                log("נמצאו " + chars.length + " מאפיינים.");
+                chars.forEach(c => log("מאפיין: " + c.uuid));
 
             } catch (err) {
                 log("שגיאה: " + err.message);
