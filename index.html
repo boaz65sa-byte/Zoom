@@ -3,26 +3,41 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - Force Connect</title>
+    <title>Zoom L-20R Control - Scanner</title>
     <style>
         body { font-family: sans-serif; text-align: center; background: #121212; color: #00ff00; padding: 20px; }
-        .card { background: #1e1e1e; border: 2px solid #333; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
-        button { background: #28a745; color: white; border: none; padding: 20px; border-radius: 10px; font-size: 1.2rem; font-weight: bold; cursor: pointer; width: 100%; max-width: 300px; }
-        .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 250px; overflow-y: scroll; font-family: monospace; font-size: 13px; margin-top: 20px; border: 1px solid #444; border-radius: 5px; }
+        .card { background: #1e1e1e; border: 1px solid #333; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
+        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-weight: bold; cursor: pointer; width: 100%; margin: 5px 0; }
+        .fader-box { margin: 20px 0; padding: 20px; background: #252525; border-radius: 10px; }
+        input[type=range] { width: 100%; height: 50px; }
+        .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 150px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin-top: 20px; border: 1px solid #444; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>שלב 1: חיבור מאולץ</h1>
-        <p>וודא שה-GPS (מיקום) דולק בטלפון!</p>
-        <button id="connectBtn">חפש מכשירים (סריקה כללית)</button>
-        <p id="status">סטטוס: ממתין ללחיצה</p>
+        <h1>שלב 2: סריקה ושליטה</h1>
+        <button id="connectBtn">1. התחבר ל-Zoom</button>
+        <p id="status">סטטוס: לא מחובר</p>
     </div>
 
-    <div class="log" id="log">לוג מערכת (כאן תראה מה קורה):</div>
+    <div id="controls" class="card" style="display:none;">
+        <div class="fader-box">
+            <label>בודק פקודה (CC#): <span id="ccNumDisplay">7</span></label>
+            <input type="number" id="ccInput" value="7" style="width: 50px; background: #333; color: white; border: 1px solid #555;">
+            <br><br>
+            <input type="range" id="testFader" min="0" max="127" value="0">
+            <h2 id="valDisplay">0</h2>
+        </div>
+        
+        <button id="autoScanBtn" style="background: #fd7e14;">הרץ סריקה אוטומטית (0-127)</button>
+        <p style="font-size: 12px; color: #aaa;">בזמן הסריקה, שים לב אם פיידר במיקסר זז</p>
+    </div>
+
+    <div class="log" id="log">לוג:</div>
 
     <script>
+        let midiChar = null;
         const log = (msg) => {
             const div = document.getElementById('log');
             div.innerHTML += `> ${msg}<br>`;
@@ -31,33 +46,57 @@
 
         document.getElementById('connectBtn').onclick = async () => {
             try {
-                log("מפעיל סורק בלוטות'...");
-                
-                // ההגדרה הזו אומרת לדפדפן: "תראה לי את כל המכשירים שאתה מוצא"
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66'] // שירות ה-MIDI
+                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66']
                 });
-
-                log("נבחר מכשיר: " + device.name);
-                document.getElementById('status').innerText = "מתחבר ל-" + device.name + "...";
-
                 const server = await device.gatt.connect();
-                log("התחברות לשרת GATT הצליחה.");
-                
                 const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
-                log("שירות MIDI נמצא.");
-                
-                document.getElementById('status').innerText = "מחובר בהצלחה ל-" + device.name;
-                document.getElementById('status').style.color = "#00ff00";
-                
-                log("מעולה! עכשיו אנחנו יכולים להתחיל לשלוט.");
+                const chars = await service.getCharacteristics();
+                midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+
+                document.getElementById('status').innerText = "מחובר ל-" + device.name;
+                document.getElementById('controls').style.display = 'block';
+                log("חיבור הצליח! נסה להזיז את הסליידר.");
             } catch (err) {
                 log("שגיאה: " + err.message);
-                if (err.message.includes("User cancelled")) {
-                    log("הסבר: סגרת את חלון הבחירה בלי לבחור מכשיר.");
-                }
             }
+        };
+
+        // פונקציית שליחת MIDI
+        async function sendMidi(cc, value) {
+            if (!midiChar) return;
+            try {
+                // פורמט MIDI BLE: [Header, Timestamp, Status, CC, Value]
+                const data = new Uint8Array([0x80, 0x80, 0xB0, cc, value]);
+                await midiChar.writeValueWithoutResponse(data);
+            } catch (e) {}
+        }
+
+        // הזזת הפיידר הידני
+        document.getElementById('testFader').oninput = (e) => {
+            const val = parseInt(e.target.value);
+            const cc = parseInt(document.getElementById('ccInput').value);
+            document.getElementById('valDisplay').innerText = val;
+            sendMidi(cc, val);
+        };
+
+        // סריקה אוטומטית
+        document.getElementById('autoScanBtn').onclick = async () => {
+            log("מתחיל סריקה... עקוב אחרי הפיידרים במיקסר!");
+            for (let i = 0; i < 128; i++) {
+                document.getElementById('ccInput').value = i;
+                document.getElementById('ccNumDisplay').innerText = i;
+                log("בודק פקודה CC #" + i);
+                
+                // שולח פקודה שתקפיץ את הפיידר למקסימום ואז תוריד
+                await sendMidi(i, 127);
+                await new Promise(r => setTimeout(r, 150));
+                await sendMidi(i, 0);
+                
+                if (i % 10 === 0) await new Promise(r => setTimeout(r, 500)); // הפסקה קלה כל 10 פקודות
+            }
+            log("סריקה הסתיימה.");
         };
     </script>
 </body>
