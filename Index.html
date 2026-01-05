@@ -1,35 +1,57 @@
-// עדכון לפונקציית הקישור בתוך ה-Script
-let midiCharacteristic = null;
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zoom L-20R Controller</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; background: #222; color: white; }
+        .fader { width: 60px; height: 200px; appearance: slider-vertical; margin: 20px; }
+        button { padding: 15px 30px; font-size: 18px; cursor: pointer; background: #007bff; color: white; border: none; border-radius: 5px; }
+    </style>
+</head>
+<body>
 
-async function connectToZoom() {
-    try {
-        const device = await navigator.bluetooth.requestDevice({
-            filters: [{ namePrefix: 'L-20R' }], // מחפש מכשיר שמתחיל ב-L-20R
-            optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66'] // ה-Service של MIDI
+    <h1>שלט Zoom L-20R</h1>
+    <button id="connectBtn">חבר למיקסר (Bluetooth)</button>
+    
+    <div id="controls" style="display:none;">
+        <h3>Channel 1</h3>
+        <input type="range" min="0" max="127" value="0" class="fader" id="ch1">
+        <p id="val">0</p>
+    </div>
+
+    <script>
+        let midiDevice = null;
+
+        document.getElementById('connectBtn').addEventListener('click', async () => {
+            try {
+                // בקשת גישה להתקן בלוטות' שתומך ב-MIDI
+                const device = await navigator.bluetooth.requestDevice({
+                    filters: [{ services: ['03b80100-f136-11e1-9103-0800200c9a66'] }] // ה-UUID הסטנדרטי של MIDI
+                });
+
+                midiDevice = await device.gatt.connect();
+                alert("מחובר ל-" + device.name);
+                document.getElementById('controls').style.display = 'block';
+            } catch (error) {
+                console.error("שגיאה בחיבור:", error);
+                alert("החיבור נכשל. וודא שהבלוטות' פועל ושמתאם BTA-1 מחובר.");
+            }
         });
 
-        const server = await device.gatt.connect();
-        const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
-        
-        // קבלת המאפיין לכתיבת נתונים
-        const characteristics = await service.getCharacteristics();
-        midiCharacteristic = characteristics.find(c => c.properties.write || c.properties.writeWithoutResponse);
+        // לוגיקה להזזת הפיידר
+        document.getElementById('ch1').addEventListener('input', (e) => {
+            const value = e.target.value;
+            document.getElementById('val').innerText = value;
+            sendMidiControlChange(1, 7, value); // ערוץ 1, פקודה 7 (Volume), הערך מהסליידר
+        });
 
-        alert("מחובר בהצלחה ל-Zoom L-20R!");
-    } catch (error) {
-        alert("שגיאה: " + error.message);
-    }
-}
-
-// פונקציה לשליחת פקודת MIDI (למשל הזזת פיידר)
-async function sendMidiCC(channel, control, value) {
-    if (!midiCharacteristic) return;
-
-    // חבילת MIDI טיפוסית בבלוטות' מורכבת מ-5 בייטים
-    const timestampLow = Date.now() & 0x7F;
-    const header = 0x80 | ((Date.now() >> 7) & 0x3F);
-    const status = 0xB0 | (channel - 1); // 0xB0 זה פקודת Control Change
-    
-    const data = new Uint8Array([header, timestampLow, status, control, value]);
-    await midiCharacteristic.writeValue(data);
-}
+        function sendMidiControlChange(channel, control, value) {
+            if (!midiDevice) return;
+            console.log(`שולח MIDI: Channel ${channel}, Control ${control}, Value ${value}`);
+            // כאן נוסיף את הקוד ששולח את הבייטים בפועל לבלוטות'
+        }
+    </script>
+</body>
+</html>
