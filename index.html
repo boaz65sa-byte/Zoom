@@ -3,27 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - FINAL 3.8</title>
+    <title>Zoom L-20R - USB MIDI Control</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: #fff; padding: 20px; }
-        #connectBtn { background: #e74c3c; color: white; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; width: 100%; cursor: pointer; box-shadow: 0 5px 15px rgba(231,76,60,0.4); }
-        .control-panel { display: none; margin-top: 20px; border: 2px dashed #e74c3c; padding: 20px; border-radius: 15px; }
-        input[type=range] { width: 100%; height: 80px; accent-color: #e74c3c; }
-        .log { background: #000; color: #0f0; text-align: left; padding: 10px; height: 120px; overflow-y: scroll; font-size: 11px; margin-top: 15px; border: 1px solid #333; direction: ltr; }
+        body { font-family: sans-serif; text-align: center; background: #f8f9fa; color: #333; padding: 20px; }
+        #connectBtn { background: #007bff; color: white; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; width: 100%; cursor: pointer; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .control-panel { display: none; margin-top: 30px; background: white; padding: 25px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        input[type=range] { width: 100%; height: 80px; accent-color: #28a745; cursor: pointer; }
+        .log { background: #222; color: #00ff00; text-align: left; padding: 10px; height: 100px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin-top: 20px; border-radius: 10px; }
+        h1 { font-size: 3rem; margin: 10px 0; color: #28a745; }
     </style>
 </head>
 <body>
 
-    <h2 style="color: #e74c3c;">גרסה 3.8 - פתיחת פורטים סופית</h2>
-    <button id="connectBtn">התחבר ובצע מנוי (Subscribe)</button>
+    <h2 style="color: #007bff;">שליטה ב-Zoom L-20R (דרך USB)</h2>
+    <button id="connectBtn">לחץ להפעלת חיבור USB MIDI</button>
 
     <div id="panel" class="control-panel">
-        <h3>Master Control</h3>
-        <input type="range" min="0" max="127" value="0" id="fader">
+        <h3>Master Fader</h3>
+        <input type="range" min="0" max="127" value="0" id="masterFader">
         <h1 id="val">0</h1>
+        <p>נסה להזיז את הסליידר - המיקסר אמור להגיב מיד.</p>
     </div>
 
-    <div class="log" id="log">System Log:</div>
+    <div class="log" id="log">לוג מערכת:</div>
 
     <script>
         const log = (msg) => {
@@ -32,54 +34,44 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        let midiChar = null;
+        let midiOutput = null;
 
         document.getElementById('connectBtn').onclick = async () => {
+            if (!navigator.requestMIDIAccess) {
+                log("הדפדפן שלך לא תומך ב-MIDI. השתמש בכרום באנדרואיד.");
+                return;
+            }
+
             try {
-                log("Requesting device...");
-                const device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    optionalServices: ['00001800-0000-1000-8000-00805f9b34fb', '00001801-0000-1000-8000-00805f9b34fb']
-                });
+                const midiAccess = await navigator.requestMIDIAccess();
+                log("גישה ל-MIDI אושרה!");
 
-                const server = await device.gatt.connect();
-                log("Connected to GATT.");
-
-                const services = await server.getPrimaryServices();
-                for (let s of services) {
-                    const chars = await s.getCharacteristics();
-                    for (let c of chars) {
-                        // אם המאפיין תומך ב-Notify, אנחנו חייבים להפעיל אותו כדי שהמכשיר "יסמוך" עלינו
-                        if (c.properties.notify || c.properties.indicate) {
-                            try {
-                                await c.startNotifications();
-                                log("Notifications started on: " + c.uuid.substring(0,4));
-                            } catch(e) {}
-                        }
-                        if (c.properties.write || c.properties.writeWithoutResponse) {
-                            midiChar = c;
-                        }
-                    }
+                const outputs = Array.from(midiAccess.outputs.values());
+                if (outputs.length === 0) {
+                    log("לא נמצא מכשיר MIDI מחובר ב-USB. וודא שהכבל מחובר.");
+                    return;
                 }
 
-                if (midiChar) {
-                    document.getElementById('panel').style.display = 'block';
-                    document.getElementById('connectBtn').style.display = 'none';
-                    log("Ready for commands.");
-                }
-            } catch (e) { log("Error: " + e.message); }
+                // מחפש את המכשיר של זום ברשימת היציאות
+                midiOutput = outputs.find(o => o.name.toLowerCase().includes('zoom') || o.name.toLowerCase().includes('l-20')) || outputs[0];
+                
+                log("מחובר למכשיר: " + midiOutput.name);
+                document.getElementById('panel').style.display = 'block';
+                document.getElementById('connectBtn').style.display = 'none';
+
+            } catch (err) {
+                log("שגיאה בגישה ל-MIDI: " + err.message);
+            }
         };
 
-        document.getElementById('fader').oninput = async (e) => {
+        document.getElementById('masterFader').oninput = (e) => {
             const v = parseInt(e.target.value);
             document.getElementById('val').innerText = v;
-            if (!midiChar) return;
-            try {
-                // נסיון שליחה של פקודת ווליום גולמית מאוד
-                await midiChar.writeValueWithoutResponse(new Uint8Array([0x01, v]));
-                // וגם נסיון בפורמט MIDI בסיסי
-                await midiChar.writeValueWithoutResponse(new Uint8Array([0xB0, 0x07, v]));
-            } catch (e) {}
+            
+            if (midiOutput) {
+                // שליחת פקודת Control Change (B0), Controller 7 (Volume), Value
+                midiOutput.send([0xB0, 0x07, v]);
+            }
         };
     </script>
 </body>
