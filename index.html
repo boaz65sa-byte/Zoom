@@ -3,18 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - Deep Scan</title>
+    <title>Zoom L-20R - Force Protocol</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #121212; color: #ff3333; padding: 20px; }
-        button { background: #ff3333; color: white; border: none; padding: 20px; border-radius: 10px; font-size: 1.2rem; cursor: pointer; width: 100%; }
-        .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 300px; overflow-y: scroll; font-family: monospace; font-size: 13px; margin-top: 20px; border: 1px solid #444; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #00ff00; padding: 20px; }
+        .card { border: 2px solid #00ff00; padding: 20px; border-radius: 15px; background: #111; }
+        button { background: #00ff00; color: black; border: none; padding: 20px; border-radius: 10px; font-weight: bold; width: 100%; cursor: pointer; font-size: 1.2rem; }
+        .log { background: #111; color: #00ff00; text-align: left; padding: 10px; height: 300px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin-top: 20px; border: 1px dashed #00ff00; }
     </style>
 </head>
 <body>
 
-    <h1>בדיקת שירותים עמוקה</h1>
-    <button id="scanAllBtn">חבר וסרוק הכל</button>
-    <div class="log" id="log">לוג:</div>
+    <div class="card">
+        <h1>Zoom MIDI Connector</h1>
+        <p>ניסיון חיבור פרוטוקול רחב</p>
+        <button id="forceBtn">התחבר ופרוץ שירותים</button>
+    </div>
+
+    <div class="log" id="log">לוג מערכת:</div>
 
     <script>
         const log = (msg) => {
@@ -23,37 +28,39 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        document.getElementById('scanAllBtn').onclick = async () => {
+        document.getElementById('forceBtn').onclick = async () => {
             try {
-                log("מחפש מכשיר...");
+                log("מתחיל סריקה...");
+                
+                // רשימת ה-UUID הנפוצים של ZOOM ו-MIDI
+                const midiUUID = '03b80100-f136-11e1-9103-0800200c9a66';
+                
                 const device = await navigator.bluetooth.requestDevice({
-                    acceptAllDevices: true,
-                    // הסרנו את הפילטר הספציפי כדי לא להיחסם
-                    optionalServices: [] 
+                    filters: [{ namePrefix: 'L-20R' }, { namePrefix: 'Zoom' }, { namePrefix: 'BTA' }],
+                    optionalServices: [midiUUID, '00001800-0000-1000-8000-00805f9b34fb', '00001801-0000-1000-8000-00805f9b34fb']
                 });
 
-                log("מתחבר ל-" + device.name);
+                log("התחברות למכשיר: " + device.name);
                 const server = await device.gatt.connect();
                 
-                log("מחפש את כל השירותים הזמינים...");
-                // כאן אנחנו מבקשים את כל השירותים שהמכשיר מציע
-                const services = await server.getPrimaryServices();
-                
-                if (services.length === 0) {
-                    log("שגיאה: לא נמצאו שירותים זמינים. נסה לכבות ולהדליק את ה-BTA-1.");
+                log("מחפש שירות MIDI...");
+                // ניסיון ראשון: לפי ה-UUID הסטנדרטי
+                try {
+                    const service = await server.getPrimaryService(midiUUID);
+                    log("נמצא שירות MIDI רשמי!");
+                    const chars = await service.getCharacteristics();
+                    log("נמצאו " + chars.length + " מאפיינים. מוכן לשליטה.");
+                } catch (e) {
+                    log("שירות MIDI ישיר לא נמצא. מנסה סריקה כללית...");
+                    const services = await server.getPrimaryServices();
+                    log("נמצאו " + services.length + " שירותים גנריים.");
+                    for (let s of services) {
+                        log("שירות זמין: " + s.uuid);
+                    }
                 }
 
-                services.forEach(async (service) => {
-                    log("נמצא שירות: " + service.uuid);
-                    const chars = await service.getCharacteristics();
-                    chars.forEach(c => {
-                        log("--- נמצא מאפיין: " + c.uuid);
-                    });
-                });
-
             } catch (err) {
-                log("שגיאה קריטית: " + err.message);
-                log("טיפ: וודא שאפליקציית האייפד סגורה לחלוטין ושנורית הבלוטות' מהבהבת.");
+                log("שגיאה: " + err.message);
             }
         };
     </script>
