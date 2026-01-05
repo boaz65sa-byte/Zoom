@@ -3,35 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסה 3.4</title>
+    <title>Zoom L-20R - גרסה 3.5</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000; color: #ffcc00; padding: 10px; }
-        #connectBtn { background: #333; color: #ffcc00; border: 2px solid #ffcc00; padding: 20px; border-radius: 15px; font-size: 1.3rem; width: 100%; cursor: pointer; }
-        .control-panel { display: none; margin-top: 20px; }
-        .fader-card { background: #111; padding: 20px; border-radius: 15px; border: 1px solid #444; margin-bottom: 15px; }
-        .cmd-btn { background: #444; color: #fff; border: none; padding: 10px; margin: 5px; border-radius: 5px; width: 45%; font-size: 0.8rem; }
-        input[type=range] { width: 100%; height: 60px; accent-color: #ffcc00; }
-        .log { background: #000; color: #0f0; text-align: left; padding: 10px; height: 100px; overflow-y: scroll; font-size: 10px; border: 1px solid #222; margin-top: 10px; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #00f2ff; padding: 10px; }
+        #connectBtn { background: #00f2ff; color: #000; border: none; padding: 20px; border-radius: 10px; font-size: 1.3rem; font-weight: bold; width: 100%; cursor: pointer; }
+        .control-panel { display: none; margin-top: 15px; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+        .btn-test { background: #1a1a1a; color: #00f2ff; border: 1px solid #00f2ff; padding: 15px; border-radius: 8px; font-size: 0.9rem; }
+        .log { background: #000; color: #0f0; text-align: left; padding: 8px; height: 100px; overflow-y: scroll; font-size: 10px; border: 1px solid #222; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div style="font-size: 0.8rem; color: #666; margin-bottom: 5px;">גרסה 3.4 - Force Sysex Commands</div>
-    <button id="connectBtn">התחבר ופתח לוח פקודות</button>
+    <div style="font-size: 0.8rem; color: #555;">גרסה 3.5 - סריקת ערוצי MIDI</div>
+    <button id="connectBtn">התחבר וסרוק ערוצים</button>
 
     <div id="panel" class="control-panel">
-        <div class="fader-card">
-            <h3>MASTER FADER (Force)</h3>
-            <input type="range" min="0" max="127" value="0" id="mainFader">
-            <h1 id="val">0</h1>
-        </div>
-
-        <div class="fader-card">
-            <h4>פקודות "התעוררות" (לחץ לפי הסדר):</h4>
-            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7])">1. זהה מכשיר</button>
-            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x01, 0xF7])">2. מצב עבודה</button>
-            <button class="cmd-btn" onclick="sendRaw([0x80, 0x80, 0xC0, 0x00])">3. החלפת ערוץ</button>
-            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x04, 0x00, 0x01, 0xF7])">4. בקשת מידע</button>
+        <h3>בדיקת ערוץ (CC7 - Volume)</h3>
+        <p>לחץ על כל ערוץ ובדוק אם המסטר זז</p>
+        <div class="grid">
+            <script>
+                for(let i=0; i<16; i++) {
+                    document.write(`<button class="btn-test" onclick="testChannel(${i})">ערוץ ${i+1}</button>`);
+                }
+            </script>
         </div>
     </div>
 
@@ -62,28 +57,23 @@
                 }
 
                 if (activeChar) {
-                    log("מחובר למאפיין כתיבה.");
+                    log("מחובר. בודק ערוצים...");
                     document.getElementById('panel').style.display = 'block';
                     document.getElementById('connectBtn').style.display = 'none';
                 }
             } catch (e) { log("שגיאה: " + e.message); }
         };
 
-        async function sendRaw(bytes) {
+        async function testChannel(ch) {
             if (!activeChar) return;
             try {
-                log("שולח פקודה: " + bytes.map(b => b.toString(16)).join(' '));
-                await activeChar.writeValueWithoutResponse(new Uint8Array(bytes));
+                // שולח פקודת ווליום מקסימלי (127) לערוץ שנבחר
+                const status = 0xB0 + ch; 
+                const data = new Uint8Array([0x80, 0x80, status, 0x07, 0x7F]);
+                await activeChar.writeValueWithoutResponse(data);
+                log(`שלחתי פקודה לערוץ MIDI ${ch + 1}`);
             } catch (e) { log("שגיאת שליחה"); }
         }
-
-        document.getElementById('mainFader').oninput = async (e) => {
-            const v = parseInt(e.target.value);
-            document.getElementById('val').innerText = v;
-            // שליחת פקודת ווליום בפורמט Sysex של Zoom
-            // מבנה: [Start, Zoom ID, Device ID, Model, Command, Data, End]
-            sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x06, 0x01, v, 0xF7]);
-        };
     </script>
 </body>
 </html>
