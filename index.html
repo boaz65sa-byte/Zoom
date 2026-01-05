@@ -3,27 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסה 3.3</title>
+    <title>Zoom L-20R - גרסה 3.4</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000; color: #bc13fe; padding: 20px; }
-        #connectBtn { background: #bc13fe; color: #fff; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; width: 100%; cursor: pointer; box-shadow: 0 0 20px #bc13fe; }
-        .fader-card { display: none; background: #111; padding: 30px; border-radius: 20px; border: 2px solid #bc13fe; margin-top: 20px; }
-        input[type=range] { width: 100%; height: 80px; accent-color: #bc13fe; }
-        .log { background: #000; color: #0f0; text-align: left; padding: 10px; height: 100px; overflow-y: scroll; font-size: 11px; margin-top: 10px; border: 1px solid #333; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #ffcc00; padding: 10px; }
+        #connectBtn { background: #333; color: #ffcc00; border: 2px solid #ffcc00; padding: 20px; border-radius: 15px; font-size: 1.3rem; width: 100%; cursor: pointer; }
+        .control-panel { display: none; margin-top: 20px; }
+        .fader-card { background: #111; padding: 20px; border-radius: 15px; border: 1px solid #444; margin-bottom: 15px; }
+        .cmd-btn { background: #444; color: #fff; border: none; padding: 10px; margin: 5px; border-radius: 5px; width: 45%; font-size: 0.8rem; }
+        input[type=range] { width: 100%; height: 60px; accent-color: #ffcc00; }
+        .log { background: #000; color: #0f0; text-align: left; padding: 10px; height: 100px; overflow-y: scroll; font-size: 10px; border: 1px solid #222; margin-top: 10px; }
     </style>
 </head>
 <body>
 
-    <div style="font-weight: bold; margin-bottom: 10px;">גרסה 3.3 - פקודת התעוררות אוטומטית</div>
-    <button id="connectBtn">התחבר ובצע Wake-up</button>
+    <div style="font-size: 0.8rem; color: #666; margin-bottom: 5px;">גרסה 3.4 - Force Sysex Commands</div>
+    <button id="connectBtn">התחבר ופתח לוח פקודות</button>
 
-    <div id="faderCard" class="fader-card">
-        <h2>MASTER FADER</h2>
-        <input type="range" min="0" max="127" value="0" oninput="sendMidi(this.value)">
-        <h1 id="val" style="font-size: 4rem;">0</h1>
+    <div id="panel" class="control-panel">
+        <div class="fader-card">
+            <h3>MASTER FADER (Force)</h3>
+            <input type="range" min="0" max="127" value="0" id="mainFader">
+            <h1 id="val">0</h1>
+        </div>
+
+        <div class="fader-card">
+            <h4>פקודות "התעוררות" (לחץ לפי הסדר):</h4>
+            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7])">1. זהה מכשיר</button>
+            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x01, 0xF7])">2. מצב עבודה</button>
+            <button class="cmd-btn" onclick="sendRaw([0x80, 0x80, 0xC0, 0x00])">3. החלפת ערוץ</button>
+            <button class="cmd-btn" onclick="sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x04, 0x00, 0x01, 0xF7])">4. בקשת מידע</button>
+        </div>
     </div>
 
-    <div class="log" id="log">לוג אבחון:</div>
+    <div class="log" id="log">לוג:</div>
 
     <script>
         const log = (msg) => {
@@ -43,40 +55,35 @@
                 const server = await device.gatt.connect();
                 const services = await server.getPrimaryServices();
                 
-                log("מבצע פקודות התעוררות...");
-
                 for (let s of services) {
                     const chars = await s.getCharacteristics();
-                    for (let c of chars) {
-                        if (c.properties.write || c.properties.writeWithoutResponse) {
-                            activeChar = c;
-                            // שליחת פקודת "התעוררות" למאפיין (מבוסס על פרוטוקול Zoom)
-                            try {
-                                await c.writeValueWithoutResponse(new Uint8Array([0x00, 0x00, 0x00, 0x00, 0x00]));
-                                await new Promise(r => setTimeout(r, 100));
-                                await c.writeValueWithoutResponse(new Uint8Array([0x80, 0x80, 0xF0, 0x7E, 0x7F, 0x06, 0x01, 0xF7]));
-                            } catch(e) {}
-                        }
-                    }
+                    activeChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
+                    if (activeChar) break;
                 }
 
                 if (activeChar) {
-                    log("מחובר ומוכן.");
-                    document.getElementById('faderCard').style.display = 'block';
+                    log("מחובר למאפיין כתיבה.");
+                    document.getElementById('panel').style.display = 'block';
                     document.getElementById('connectBtn').style.display = 'none';
                 }
             } catch (e) { log("שגיאה: " + e.message); }
         };
 
-        async function sendMidi(v) {
-            document.getElementById('val').innerText = v;
+        async function sendRaw(bytes) {
             if (!activeChar) return;
             try {
-                // שליחת MIDI CC7 דרך המאפיין הפעיל
-                const data = new Uint8Array([0x80, 0x80, 0xB0, 0x07, v]);
-                await activeChar.writeValueWithoutResponse(data);
-            } catch (e) {}
+                log("שולח פקודה: " + bytes.map(b => b.toString(16)).join(' '));
+                await activeChar.writeValueWithoutResponse(new Uint8Array(bytes));
+            } catch (e) { log("שגיאת שליחה"); }
         }
+
+        document.getElementById('mainFader').oninput = async (e) => {
+            const v = parseInt(e.target.value);
+            document.getElementById('val').innerText = v;
+            // שליחת פקודת ווליום בפורמט Sysex של Zoom
+            // מבנה: [Start, Zoom ID, Device ID, Model, Command, Data, End]
+            sendRaw([0xF0, 0x52, 0x00, 0x6E, 0x06, 0x01, v, 0xF7]);
+        };
     </script>
 </body>
 </html>
