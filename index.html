@@ -3,27 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - UNLOCK 3.7</title>
+    <title>Zoom L-20R - FINAL 3.8</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000; color: #fff; padding: 20px; }
-        #connectBtn { background: #f39c12; color: #000; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; }
-        .control-panel { display: none; margin-top: 20px; border: 2px solid #f39c12; padding: 20px; border-radius: 15px; }
-        input[type=range] { width: 100%; height: 80px; accent-color: #f39c12; }
-        .log { background: #111; color: #0f0; text-align: left; padding: 10px; height: 100px; overflow-y: scroll; font-size: 10px; margin-top: 15px; border: 1px solid #333; }
+        body { font-family: sans-serif; text-align: center; background: #1a1a1a; color: #fff; padding: 20px; }
+        #connectBtn { background: #e74c3c; color: white; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; width: 100%; cursor: pointer; box-shadow: 0 5px 15px rgba(231,76,60,0.4); }
+        .control-panel { display: none; margin-top: 20px; border: 2px dashed #e74c3c; padding: 20px; border-radius: 15px; }
+        input[type=range] { width: 100%; height: 80px; accent-color: #e74c3c; }
+        .log { background: #000; color: #0f0; text-align: left; padding: 10px; height: 120px; overflow-y: scroll; font-size: 11px; margin-top: 15px; border: 1px solid #333; direction: ltr; }
     </style>
 </head>
 <body>
 
-    <h2 style="color: #f39c12;">גרסה 3.7 - ניסיון פריצה סופי</h2>
-    <button id="connectBtn">התחבר ובצע UNLOCK</button>
+    <h2 style="color: #e74c3c;">גרסה 3.8 - פתיחת פורטים סופית</h2>
+    <button id="connectBtn">התחבר ובצע מנוי (Subscribe)</button>
 
     <div id="panel" class="control-panel">
-        <h3>MASTER VOLUME</h3>
+        <h3>Master Control</h3>
         <input type="range" min="0" max="127" value="0" id="fader">
         <h1 id="val">0</h1>
     </div>
 
-    <div class="log" id="log">לוג אבחון:</div>
+    <div class="log" id="log">System Log:</div>
 
     <script>
         const log = (msg) => {
@@ -32,43 +32,53 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        let activeChar = null;
+        let midiChar = null;
 
         document.getElementById('connectBtn').onclick = async () => {
             try {
+                log("Requesting device...");
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
                     optionalServices: ['00001800-0000-1000-8000-00805f9b34fb', '00001801-0000-1000-8000-00805f9b34fb']
                 });
+
                 const server = await device.gatt.connect();
+                log("Connected to GATT.");
+
                 const services = await server.getPrimaryServices();
                 for (let s of services) {
                     const chars = await s.getCharacteristics();
-                    activeChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse);
-                    if (activeChar) break;
+                    for (let c of chars) {
+                        // אם המאפיין תומך ב-Notify, אנחנו חייבים להפעיל אותו כדי שהמכשיר "יסמוך" עלינו
+                        if (c.properties.notify || c.properties.indicate) {
+                            try {
+                                await c.startNotifications();
+                                log("Notifications started on: " + c.uuid.substring(0,4));
+                            } catch(e) {}
+                        }
+                        if (c.properties.write || c.properties.writeWithoutResponse) {
+                            midiChar = c;
+                        }
+                    }
                 }
 
-                if (activeChar) {
-                    log("מבצע UNLOCK...");
-                    // פקודת ה-Unlock הסודית של Zoom
-                    await activeChar.writeValueWithoutResponse(new Uint8Array([0x80, 0x80, 0xF0, 0x52, 0x00, 0x6E, 0x01, 0xF7]));
-                    await new Promise(r => setTimeout(r, 500));
-                    
+                if (midiChar) {
                     document.getElementById('panel').style.display = 'block';
                     document.getElementById('connectBtn').style.display = 'none';
-                    log("מוכן. נסה להזיז את הסליידר.");
+                    log("Ready for commands.");
                 }
-            } catch (e) { log("שגיאה: " + e.message); }
+            } catch (e) { log("Error: " + e.message); }
         };
 
         document.getElementById('fader').oninput = async (e) => {
-            const v = e.target.value;
+            const v = parseInt(e.target.value);
             document.getElementById('val').innerText = v;
-            if (!activeChar) return;
+            if (!midiChar) return;
             try {
-                // שליחת פקודה בפורמט Sysex מלא של Zoom ל-Master Fader
-                const sysex = [0x80, 0x80, 0xF0, 0x52, 0x00, 0x6E, 0x06, 0x01, parseInt(v), 0xF7];
-                await activeChar.writeValueWithoutResponse(new Uint8Array(sysex));
+                // נסיון שליחה של פקודת ווליום גולמית מאוד
+                await midiChar.writeValueWithoutResponse(new Uint8Array([0x01, v]));
+                // וגם נסיון בפורמט MIDI בסיסי
+                await midiChar.writeValueWithoutResponse(new Uint8Array([0xB0, 0x07, v]));
             } catch (e) {}
         };
     </script>
