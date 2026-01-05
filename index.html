@@ -3,27 +3,27 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסה 3.0</title>
+    <title>Zoom L-20R - גרסה 3.1</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000b1a; color: #fff; padding: 20px; }
-        #connectBtn { background: #00d4ff; color: #000; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; }
-        .log { background: #000; color: #00ff00; text-align: left; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #00d4ff; font-size: 11px; }
-        .control-panel { display: none; margin-top: 20px; padding: 20px; border: 2px solid #00d4ff; border-radius: 15px; }
-        input[type=range] { width: 100%; height: 60px; accent-color: #00d4ff; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #0f0; padding: 20px; }
+        #connectBtn { background: #333; color: #0f0; border: 2px solid #0f0; padding: 20px; border-radius: 10px; font-size: 1.2rem; cursor: pointer; width: 100%; }
+        .log { background: #111; color: #0f0; text-align: left; padding: 10px; height: 150px; overflow-y: scroll; margin-top: 10px; font-family: monospace; font-size: 11px; border: 1px solid #333; }
+        .control-panel { display: none; margin-top: 20px; }
+        .fader-card { background: #1a1a1a; padding: 15px; border-radius: 10px; margin-bottom: 15px; border: 1px solid #444; }
+        input[type=range] { width: 100%; height: 50px; accent-color: #0f0; }
+        h4 { margin: 5px 0; color: #fff; }
     </style>
 </head>
 <body>
 
-    <div style="color: #00d4ff; margin-bottom: 10px;">גרסה 3.0 - ניסיון שליטה דרך שירות גנרי</div>
-    <button id="connectBtn">חבר ונסה שליטה ישירה</button>
+    <div style="font-size: 0.8rem; color: #666;">גרסה 3.1 - בדיקת מאפיינים מרובה</div>
+    <button id="connectBtn">התחבר ופרוס סליידרים</button>
 
     <div id="controlPanel" class="control-panel">
-        <h3>ניסיון שליטה (ערוץ 1)</h3>
-        <input type="range" id="fader1" min="0" max="127" value="0">
-        <h1 id="val">0</h1>
+        <div id="slidersContainer"></div>
     </div>
 
-    <div class="log" id="log">לוג מערכת:</div>
+    <div class="log" id="log">לוג:</div>
 
     <script>
         const log = (msg) => {
@@ -32,57 +32,67 @@
             div.scrollTop = div.scrollHeight;
         };
 
-        let targetChar = null;
+        let writableChars = [];
 
         document.getElementById('connectBtn').onclick = async () => {
             try {
-                log("מחפש מכשיר...");
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    // אנחנו מתרכזים בשירות שהמיקסר כן מראה
                     optionalServices: ['00001800-0000-1000-8000-00805f9b34fb', '00001801-0000-1000-8000-00805f9b34fb']
                 });
 
-                log("מתחבר...");
                 const server = await device.gatt.connect();
-                log("מחובר פיזית.");
+                log("מחובר!");
 
-                // ניסיון למצוא מאפיין כתיבה בשירותים הקיימים
                 const services = await server.getPrimaryServices();
+                const container = document.getElementById('slidersContainer');
+                container.innerHTML = "";
+
                 for (let service of services) {
                     const chars = await service.getCharacteristics();
                     for (let char of chars) {
                         if (char.properties.write || char.properties.writeWithoutResponse) {
-                            targetChar = char;
-                            log("נמצא מאפיין כתיבה: " + char.uuid.substring(0,8));
+                            const index = writableChars.length;
+                            writableChars.push(char);
+                            
+                            // יצירת סליידר לכל מאפיין שנמצא
+                            const card = document.createElement('div');
+                            card.className = 'fader-card';
+                            card.innerHTML = `
+                                <h4>מאפיין: ${char.uuid.substring(0,4)}...${char.uuid.substring(32)}</h4>
+                                <input type="range" min="0" max="127" value="0" oninput="sendData(${index}, this.value)">
+                                <div id="val${index}">0</div>
+                            `;
+                            container.appendChild(card);
                         }
                     }
                 }
 
-                if (targetChar) {
-                    log("מנסה לפתוח לוח שליטה...");
+                if (writableChars.length > 0) {
                     document.getElementById('controlPanel').style.display = 'block';
                     document.getElementById('connectBtn').style.display = 'none';
-                } else {
-                    log("שגיאה: המכשיר מחובר אך לא מאפשר כתיבת נתונים.");
+                    log(`נמצאו ${writableChars.length} ערוצי כתיבה. נסה להזיז את כולם.`);
                 }
-
             } catch (err) {
                 log("שגיאה: " + err.message);
             }
         };
 
-        document.getElementById('fader1').oninput = async (e) => {
-            const v = e.target.value;
-            document.getElementById('val').innerText = v;
-            if (targetChar) {
-                try {
-                    // שליחת בייטים גנריים
-                    const data = new Uint8Array([0xB0, 0x07, v]);
-                    await targetChar.writeValueWithoutResponse(data);
-                } catch (e) {}
+        async function sendData(index, val) {
+            document.getElementById('val' + index).innerText = val;
+            const char = writableChars[index];
+            try {
+                // ניסיון לשלוח פקודה בפורמט "SysEx" קצר שזום אוהבים
+                const data = new Uint8Array([0x01, 0x00, parseInt(val)]);
+                if (char.properties.writeWithoutResponse) {
+                    await char.writeValueWithoutResponse(data);
+                } else {
+                    await char.writeValueWithResponse(data);
+                }
+            } catch (e) {
+                console.error(e);
             }
-        };
+        }
     </script>
 </body>
 </html>
