@@ -3,84 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R Debugger</title>
+    <title>Zoom L-20R Control - Beta</title>
     <style>
+        /* עיצוב הממשק */
         body { font-family: sans-serif; text-align: center; background: #121212; color: #00ff00; padding: 20px; }
         .card { background: #1e1e1e; border: 1px solid #333; padding: 20px; border-radius: 15px; margin-bottom: 20px; }
-        input[type=range] { width: 80%; height: 40px; }
-        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-weight: bold; }
+        button { background: #007bff; color: white; border: none; padding: 15px 30px; border-radius: 5px; font-weight: bold; margin: 5px; cursor: pointer; }
+        #scanBtn { background: #fd7e14; } /* כפתור כתום לסריקה */
         .log { background: black; color: #00ff00; text-align: left; padding: 10px; height: 150px; overflow-y: scroll; font-family: monospace; font-size: 12px; margin-top: 20px; border: 1px solid #444; }
+        input[type=range] { width: 80%; margin: 20px 0; }
     </style>
 </head>
 <body>
 
     <div class="card">
-        <h1>L-20R Controller v1.0</h1>
-        <button id="connectBtn">חבר בלוטות' (BTA-1)</button>
+        <h1>L-20R Controller v1.1</h1>
+        <button id="connectBtn">1. חבר בלוטות' (BTA-1)</button>
+        <button id="scanBtn" style="display:none;">2. הרץ סריקת פקודות</button>
         <p id="status">סטטוס: ממתין לחיבור...</p>
     </div>
 
     <div id="controls" class="card" style="display:none;">
-        <h3>Channel 1 Fader</h3>
+        <h3>בדיקת פיידר (ערוץ 1 משוער)</h3>
         <input type="range" id="fader1" min="0" max="127" value="0">
         <h2 id="valDisplay">0</h2>
-        
-        <hr>
-        <p>בדיקת פקודה (CC#):</p>
-        <input type="number" id="ccNum" value="7" style="width: 50px;">
+        <p>נסה להזיז וראה אם משהו קורה במיקסר</p>
     </div>
 
     <div class="log" id="log">לוג מערכת:</div>
 
     <script>
         let midiChar = null;
+
+        // פונקציה להדפסת הודעות למסך
         const log = (msg) => {
             const div = document.getElementById('log');
             div.innerHTML += `> ${msg}<br>`;
             div.scrollTop = div.scrollHeight;
         };
 
+        // לוגיקת חיבור
         document.getElementById('connectBtn').onclick = async () => {
             try {
-                log("מחפש מכשיר...");
+                log("מחפש את ה-Zoom...");
                 const device = await navigator.bluetooth.requestDevice({
                     filters: [{ namePrefix: 'L-20R' }, { namePrefix: 'Zoom' }, { namePrefix: 'BTA-1' }],
                     optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66']
                 });
 
-                log("מתחבר ל-GATT...");
+                log("מתחבר...");
                 const server = await device.gatt.connect();
                 const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
                 const chars = await service.getCharacteristics();
                 
-                // חיפוש המאפיין שמאפשר כתיבה
                 midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
 
                 document.getElementById('status').innerText = "מחובר ל: " + device.name;
                 document.getElementById('controls').style.display = 'block';
-                log("החיבור הצליח! מוכן לשלוח פקודות.");
+                document.getElementById('scanBtn').style.display = 'inline-block';
+                log("התחברת בהצלחה!");
             } catch (err) {
-                log("שגיאה: " + err.message);
+                log("שגיאה בחיבור: " + err.message);
             }
         };
 
+        // שליחת פקודה מהסליידר
         document.getElementById('fader1').oninput = async (e) => {
             const val = parseInt(e.target.value);
-            const cc = parseInt(document.getElementById('ccNum').value);
             document.getElementById('valDisplay').innerText = val;
-            
-            if (midiChar) {
-                try {
-                    // פרוטוקול MIDI BLE: [Header, Timestamp, Status, Data1, Data2]
-                    // 0xB0 = Control Change, 0x07 = Volume (בדרך כלל)
-                    const data = new Uint8Array([0x80, 0x80, 0xB0, cc, val]);
-                    await midiChar.writeValueWithoutResponse(data);
-                    log(`נשלח: CC ${cc}, Value ${val}`);
-                } catch (err) {
-                    log("שגיאה בשליחה: " + err.message);
-                }
-            }
+            sendMidi(7, val); // שולח פקודה מספר 7 (Volume סטנדרטי)
         };
+
+        // פונקציית הסריקה האוטומטית
+        document.getElementById('scanBtn').onclick = async () => {
+            log("מתחיל סריקה של כל פקודות ה-MIDI...");
+            for (let i = 0; i < 128; i++) {
+                log("בודק פקודה (CC) מספר: " + i);
+                await sendMidi(i, 100); // שולח עוצמה גבוהה לכל פקודה
+                await new Promise(r => setTimeout(r, 200)); // מחכה קצת בין פקודות
+            }
+            log("סריקה הסתיימה.");
+        };
+
+        // הפונקציה ששולחת את המידע בפועל למיקסר
+        async function sendMidi(cc, value) {
+            if (!midiChar) return;
+            try {
+                // מבנה חבילה של MIDI over Bluetooth
+                const data = new Uint8Array([0x80, 0x80, 0xB0, cc, value]);
+                await midiChar.writeValueWithoutResponse(data);
+            } catch (e) {
+                console.error("שגיאה בשליחה", e);
+            }
+        }
     </script>
 </body>
 </html>
