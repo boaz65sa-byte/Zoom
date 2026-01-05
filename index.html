@@ -3,18 +3,25 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - Simple Connect</title>
+    <title>Zoom L-20R - Force Link</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #222; color: #fff; padding: 20px; }
-        .btn { background: #28a745; color: white; border: none; padding: 20px; border-radius: 10px; font-size: 1.2rem; width: 100%; cursor: pointer; }
-        .log { background: #000; color: #00ff00; text-align: left; padding: 10px; height: 300px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #444; }
+        body { font-family: sans-serif; text-align: center; background: #111; color: #fff; padding: 20px; }
+        .btn { background: #007bff; color: white; border: none; padding: 25px; border-radius: 12px; font-size: 1.4rem; width: 100%; cursor: pointer; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+        .log { background: #000; color: #00ff00; text-align: left; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; font-family: 'Courier New', monospace; border: 2px solid #333; font-size: 13px; }
+        .status-dot { height: 15px; width: 15px; background-color: red; border-radius: 50%; display: inline-block; margin-left: 10px; }
     </style>
 </head>
 <body>
 
-    <h1>חיבור Zoom L-20R</h1>
-    <button class="btn" id="connect">לחץ לחיבור (סריקה כללית)</button>
-    <div class="log" id="log">לוג מערכת:</div>
+    <h1>שליטה ב-Zoom L-20R</h1>
+    <div style="margin-bottom: 20px;">
+        <span id="dot" class="status-dot"></span>
+        <span id="statText">ממתין לחיבור...</span>
+    </div>
+    
+    <button class="btn" id="connect">התחבר עכשיו</button>
+    
+    <div class="log" id="log">לוג תקשורת:</div>
 
     <script>
         const log = (msg) => {
@@ -23,31 +30,43 @@
             div.scrollTop = div.scrollHeight;
         };
 
+        const updateStatus = (text, color) => {
+            document.getElementById('statText').innerText = text;
+            document.getElementById('dot').style.backgroundColor = color;
+        };
+
         document.getElementById('connect').onclick = async () => {
             try {
-                log("סורק מכשירים...");
-                // אנחנו משתמשים בשיטה הכי בסיסית שעבדה לך קודם
+                log("1. פותח סורק...");
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66']
+                    optionalServices: ['03b80100-f136-11e1-9103-0800200c9a66'] 
                 });
 
-                log("מתחבר ל: " + device.name);
+                log("2. נמצא מכשיר: " + device.name);
+                updateStatus("מתחבר...", "orange");
+
                 const server = await device.gatt.connect();
-                log("מחובר פיזית! נורה אמורה להיות כחולה.");
+                log("3. מחובר לשרת GATT!");
+                updateStatus("מחובר פיזית", "blue");
 
-                // ניסיון לקבל את השירות
-                log("מנסה לשלוף שירות MIDI...");
-                const service = await server.getPrimaryService('03b80100-f136-11e1-9103-0800200c9a66');
-                log("הצלחתי למצוא את השירות!");
+                log("4. מחפש שירותים...");
+                const services = await server.getPrimaryServices();
+                log(`5. נמצאו ${services.length} שירותים במכשיר.`);
 
-                const chars = await service.getCharacteristics();
-                log("נמצאו " + chars.length + " מאפיינים.");
-                chars.forEach(c => log("מאפיין: " + c.uuid));
+                for (let service of services) {
+                    log(`שירות: ${service.uuid}`);
+                    if (service.uuid.includes('03b80100')) {
+                        log("!!! נמצא שירות ה-MIDI של ZOOM !!!");
+                        const chars = await service.getCharacteristics();
+                        log(`נמצאו ${chars.length} מאפיינים.`);
+                        updateStatus("מוכן לעבודה!", "green");
+                    }
+                }
 
             } catch (err) {
-                log("שגיאה: " + err.message);
-                console.error(err);
+                log("שגיאה קריטית: " + err.message);
+                updateStatus("שגיאה", "red");
             }
         };
     </script>
