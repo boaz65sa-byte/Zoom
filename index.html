@@ -3,24 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסה 2.6</title>
+    <title>Zoom L-20R - גרסה 2.7</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #2c3e50; color: #fff; padding: 20px; }
-        #connectBtn { background: #2ecc71; color: #000; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; }
-        .log { background: #000; color: #00ff00; text-align: left; padding: 15px; height: 300px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #7f8c8d; font-size: 12px; }
-        .control-panel { display: none; background: #34495e; padding: 20px; border-radius: 15px; margin-top: 20px; border: 2px solid #2ecc71; }
-        input[type=range] { width: 100%; height: 60px; }
+        body { font-family: sans-serif; text-align: center; background: #ffffff; color: #000; padding: 20px; }
+        #connectBtn { background: #000; color: #fff; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; }
+        .log { background: #f4f4f4; color: #333; text-align: left; padding: 15px; height: 250px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #ccc; font-size: 12px; }
+        .fader-grid { display: none; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 20px; }
+        .fader-card { border: 1px solid #000; padding: 10px; border-radius: 10px; }
+        input[type=range] { width: 100%; height: 50px; accent-color: #007bff; }
     </style>
 </head>
 <body>
 
-    <div style="font-weight: bold; margin-bottom: 10px; color: #2ecc71;">גרסה 2.6 - חיבור פתוח + הזרקת MIDI</div>
-    <button id="connectBtn">חבר מכשיר (סריקה פתוחה)</button>
+    <div style="font-weight: bold; margin-bottom: 10px;">גרסה 2.7 - הזרקה ישירה (Direct Injection)</div>
+    <button id="connectBtn">התחבר ונסה הזרקה</button>
 
-    <div id="controlPanel" class="control-panel">
-        <h3>שליטה בערוץ 1 (CC#7)</h3>
-        <input type="range" id="fader1" min="0" max="127" value="0">
-        <h1 id="val">0</h1>
+    <div id="faderGrid" class="fader-grid">
+        <div class="fader-card">
+            <label>Master (CC7)</label>
+            <input type="range" min="0" max="127" value="0" oninput="sendMidi(7, this.value)">
+        </div>
+        <div class="fader-card">
+            <label>CH 1 (CC20)</label>
+            <input type="range" min="0" max="127" value="0" oninput="sendMidi(20, this.value)">
+        </div>
     </div>
 
     <div class="log" id="log">לוג אבחון:</div>
@@ -33,53 +39,50 @@
         };
 
         let midiChar = null;
+        // UUID המקורי של MIDI BLE
         const MIDI_SERVICE = '03b80100-f136-11e1-9103-0800200c9a66';
+        const MIDI_CHAR = '7772e5db-3868-4112-a1a9-f2669d106bf3';
 
         document.getElementById('connectBtn').onclick = async () => {
             try {
-                log("סורק את כל המכשירים...");
+                log("סורק מכשירים...");
                 const device = await navigator.bluetooth.requestDevice({
-                    // אנחנו חוזרים לשיטה שמראה את כל המכשירים
                     acceptAllDevices: true,
-                    // אבל אנחנו מודיעים מראש שאנחנו רוצים את שירות ה-MIDI
                     optionalServices: [MIDI_SERVICE]
                 });
 
-                log("מתחבר ל-" + device.name);
+                log("מתחבר...");
                 const server = await device.gatt.connect();
-                log("חיבור פיזי הצליח!");
+                
+                log("מנסה הזרקה ישירה לשירות...");
+                // כאן אנחנו מנסים "לפרוץ" פנימה גם אם הוא לא הצהיר על השירות
+                const service = await server.getPrimaryService(MIDI_SERVICE);
+                log("הצלחתי להזריק את השירות!");
 
-                try {
-                    log("מנסה לשלוף את שירות ה-MIDI...");
-                    const service = await server.getPrimaryService(MIDI_SERVICE);
-                    const chars = await service.getCharacteristics();
-                    midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
-                    
-                    if (midiChar) {
-                        log("!!! מצאתי ערוץ MIDI - אפשר לשלוט !!!");
-                        document.getElementById('controlPanel').style.display = 'block';
-                        document.getElementById('connectBtn').style.display = 'none';
-                    }
-                } catch (e) {
-                    log("התחברתי, אך המכשיר עדיין מסתיר את שירות ה-MIDI.");
-                    log("שגיאה טכנית: " + e.message);
+                const chars = await service.getCharacteristics();
+                midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
+
+                if (midiChar) {
+                    log("ערוץ MIDI נפתח בהצלחה!");
+                    document.getElementById('faderGrid').style.display = 'grid';
+                    document.getElementById('connectBtn').style.display = 'none';
                 }
-
             } catch (err) {
                 log("שגיאה: " + err.message);
+                log("נסה לנתק את ה-BTA-1 פיזית ולהחזיר.");
             }
         };
 
-        document.getElementById('fader1').oninput = async (e) => {
-            const v = e.target.value;
-            document.getElementById('val').innerText = v;
-            if (midiChar) {
-                try {
-                    const data = new Uint8Array([0x80, 0x80, 0xB0, 0x07, v]);
-                    await midiChar.writeValueWithoutResponse(data);
-                } catch (e) {}
+        async function sendMidi(cc, val) {
+            if (!midiChar) return;
+            try {
+                // פורמט חבילה MIDI BLE תקני
+                const data = new Uint8Array([0x80, 0x80, 0xB0, cc, val]);
+                await midiChar.writeValueWithoutResponse(data);
+            } catch (e) {
+                log("שגיאת שליחה: " + e.message);
             }
-        };
+        }
     </script>
 </body>
 </html>
