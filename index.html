@@ -3,24 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Zoom L-20R - גרסה 2.8</title>
+    <title>Zoom L-20R - גרסה 2.9</title>
     <style>
-        body { font-family: sans-serif; text-align: center; background: #000; color: #ffcc00; padding: 20px; }
-        #connectBtn { background: #ff6600; color: #fff; border: none; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; box-shadow: 0 0 20px #ff6600; }
+        body { font-family: sans-serif; text-align: center; background: #000; color: #fff; padding: 20px; }
+        #connectBtn { background: #000; color: #00ff00; border: 3px solid #00ff00; padding: 25px; border-radius: 15px; font-size: 1.5rem; font-weight: bold; width: 100%; cursor: pointer; box-shadow: 0 0 15px #00ff00; }
         .log { background: #111; color: #00ff00; text-align: left; padding: 15px; height: 350px; overflow-y: scroll; margin-top: 20px; font-family: monospace; border: 1px solid #333; font-size: 11px; }
-        .fader-box { display: none; margin-top: 20px; padding: 20px; border: 2px solid #ff6600; border-radius: 15px; }
-        input[type=range] { width: 100%; height: 60px; }
+        .control-area { display: none; margin-top: 20px; padding: 20px; border: 2px solid #00ff00; border-radius: 15px; background: #111; }
+        input[type=range] { width: 100%; height: 80px; accent-color: #00ff00; }
     </style>
 </head>
 <body>
 
-    <div style="font-weight: bold; margin-bottom: 10px;">גרסה 2.8 - הפעלת פרוטוקול MIDI</div>
-    <button id="connectBtn">התחל תהליך הצמדה (Pairing)</button>
+    <div style="color: #00ff00; margin-bottom: 10px;">גרסה 2.9 - עקיפת אבטחה וחיבור MIDI</div>
+    <button id="connectBtn">התחבר (ניסיון עקיפה)</button>
 
-    <div id="faderBox" class="fader-box">
-        <h3>שליטה בערוץ 1 (CC 7)</h3>
+    <div id="controlArea" class="control-area">
+        <h2 style="color:#00ff00">שליטה פעילה - ערוץ 1</h2>
         <input type="range" id="fader1" min="0" max="127" value="0">
-        <h1 id="val">0</h1>
+        <h1 id="val" style="font-size: 4rem;">0</h1>
     </div>
 
     <div class="log" id="log">לוג אבחון:</div>
@@ -40,45 +40,37 @@
                 log("מחפש מכשיר...");
                 const device = await navigator.bluetooth.requestDevice({
                     acceptAllDevices: true,
-                    // אנחנו מבקשים רשות לכל השירותים שראינו בצילום מסך + ה-MIDI
-                    optionalServices: [
-                        '00001800-0000-1000-8000-00805f9b34fb',
-                        '00001801-0000-1000-8000-00805f9b34fb',
-                        MIDI_SERVICE
-                    ]
+                    optionalServices: [MIDI_SERVICE]
                 });
 
-                log("מתחבר לשרת...");
+                log("מתחבר ל-GATT... (נורה תהפוך לכחולה)");
                 const server = await device.gatt.connect();
-                log("חיבור פיזי בוצע.");
+                
+                log("מחובר. ממתין 2 שניות להתייצבות המיקסר...");
+                await new Promise(r => setTimeout(r, 2000));
 
-                // שלב 1: ניסיון "לעורר" את המכשיר דרך השירותים הגנריים
-                log("מנסה 'לחיצת יד' עם המכשיר...");
+                log("ניסיון פריצה לשירות ה-MIDI...");
                 try {
-                    const services = await server.getPrimaryServices();
-                    log("סורק שירותים זמינים (" + services.length + ")...");
-                    
-                    // ניסיון חוזר לפתוח את ה-MIDI אחרי שהתחברנו לשירותים הבסיסיים
-                    const mService = await server.getPrimaryService(MIDI_SERVICE);
-                    const chars = await mService.getCharacteristics();
+                    const service = await server.getPrimaryService(MIDI_SERVICE);
+                    const chars = await service.getCharacteristics();
                     midiChar = chars.find(c => c.properties.writeWithoutResponse || c.properties.write);
                     
                     if (midiChar) {
-                        log("הצלחתי! שירות ה-MIDI נחשף.");
-                        document.getElementById('faderBox').style.display = 'block';
+                        log("הצלחה! ערוץ ה-MIDI נפתח.");
+                        document.getElementById('controlArea').style.display = 'block';
                         document.getElementById('connectBtn').style.display = 'none';
                     }
                 } catch (e) {
-                    log("המכשיר מסרב לחשוף MIDI. מנסה שיטה חלופית...");
-                    // ניסיון אחרון: גישה דרך ה-Characteristic הישיר
-                    const mService = await server.getPrimaryService(MIDI_SERVICE);
-                    log("נמצא שירות מוסתר. פותח...");
-                    // המשך הקוד דומה...
+                    log("המכשיר עדיין נועל את ה-MIDI. מנסה 'הזרקה קרה'...");
+                    // ניסיון אחרון - בקשה ישירה
+                    const services = await server.getPrimaryServices();
+                    log("נמצאו " + services.length + " שירותים גלויים.");
+                    services.forEach(s => log("שירות זמין: " + s.uuid.substring(0,8)));
+                    log("אם לא מופיע 03b80100, המיקסר במצב APP ולא MIDI.");
                 }
 
             } catch (err) {
-                log("שגיאה סופית: " + err.message);
-                log("בדיקה חשובה: האם ה-BTA-1 מהבהב כשאתה מנסה?");
+                log("שגיאה: " + err.message);
             }
         };
 
@@ -87,6 +79,7 @@
             document.getElementById('val').innerText = v;
             if (midiChar) {
                 try {
+                    // הזרקת פקודת ווליום ערוץ 1
                     const data = new Uint8Array([0x80, 0x80, 0xB0, 0x07, v]);
                     await midiChar.writeValueWithoutResponse(data);
                 } catch (e) {}
